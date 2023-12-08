@@ -1,0 +1,97 @@
+name: qn-marketplace-cli tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [18.x]
+
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          PGPASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: marketplace_starter_ts_development
+        ports:
+          - 5432:5432
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+
+    steps:
+      - uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Install PostgreSQL client
+        run: sudo apt-get install -y postgresql-client
+
+      - name: Check out source code
+        uses: actions/checkout@v2
+        with:
+          path: webapp
+
+      - name: Get dependencies
+        run: cd webapp && bun install
+
+      - name: Create .env file
+        run: |
+          cd webapp && cat > .env <<EOL
+          PORT=3030
+          DATABASE_URL=postgres://postgres:postgres@localhost:5432/marketplace_starter_ts_development
+          QN_SSO_SECRET=jwt-secret
+          BASIC_AUTH_USERNAME=username
+          BASIC_AUTH_PASSWORD=password
+          EOL
+
+      - name: Migrate db
+        run: cd webapp && bun migrate
+
+      - name: Seed db
+        run: cd webapp && bun prisma/seed.ts
+
+      - name: Start the web app in the background
+        run: |
+          cd webapp && bun dev &
+          sleep 3  # Give the web app some time to start
+
+      - name: cache qn-marketplace-cli
+        uses: actions/cache@v3
+        id: cache-cli
+        with:
+          path: cli/qn-marketplace-cli
+          key: ${{ runner.os }}-mktp-cli
+
+      - name: Check out source code for qn-marketplace-cli
+        if: steps.cache-cli.outputs.cache-hit != 'true'
+        uses: actions/checkout@v2
+        with:
+          repository: quiknode-labs/qn-marketplace-cli
+          ref: main
+          path: cli
+
+      - name: Build qn-marketplace-cli
+        if: steps.cache-cli.outputs.cache-hit != 'true'
+        run: cd cli && go build
+
+      - name: Conduct a healthcheck [REQUIRED]
+        run: ./cli/qn-marketplace-cli healthcheck --url http://localhost:3030/healthcheck
+
+      - name: Conduct a PUDD test [REQUIRED]
+        run: ./cli/qn-marketplace-cli pudd --base-url http://localhost:3030 --basic-auth dXNlcm5hbWU6cGFzc3dvcmQ=
+
+      # - name: Test RPC [OPTIONAL - remove from this yml file if your add-on does not have RPC methods]
+      #   run: ./cli/qn-marketplace-cli rpc --url http://localhost:3030/provision --rpc-method qn_test --rpc-url http://localhost:3030/rpc  --rpc-params "[\"abc\"]" --basic-auth dXNlcm5hbWU6cGFzc3dvcmQ=
+
+      # - name: Test SSO [OPTIONAL - remove from this yml file if your add-on does not have a dashboard]
+      #   run: ./cli/qn-marketplace-cli sso --basic-auth dXNlcm5hbWU6cGFzc3dvcmQ= --url http://localhost:3030/dashboard --jwt-secret jwt-secret --email jon@example.com --name jon --org QuickNode
