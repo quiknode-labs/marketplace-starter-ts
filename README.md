@@ -1,5 +1,11 @@
 # marketplace-starter-ts
 
+Install bun
+
+```bash
+curl -fsSL https://bun.sh/install | bash # for macOS, Linux, and WSL
+```
+
 Create .env file:
 
 ```bash
@@ -10,6 +16,20 @@ Install dependencies:
 
 ```bash
 bun install
+```
+
+Create DB:
+
+```psql
+create user postgres with password 'postgres';
+create database marketplace_starter_ts_dev;
+grant all privileges on database marketplace_starter_ts_dev to postgres;
+```
+
+Generate DB bindings:
+
+```bash
+bun x prisma generate
 ```
 
 Migrate DB:
